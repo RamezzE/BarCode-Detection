@@ -144,7 +144,7 @@ def detect_barcodes(image):
 
     if len(cnts) == 0:
         print("No contours found")
-        return
+        return image
 
     largest_contour_area = cv2.contourArea(
         sorted(cnts, key=cv2.contourArea, reverse=True)[0])
@@ -172,26 +172,30 @@ def detect_barcodes(image):
         cv2.drawContours(image, [box], -1, (0, 255, 0), 3)
         # cv2.drawContours(image, [box_original], -1, (255, 0, 0), 3)
 
-    image_name = os.path.basename(image_path)
-    cv2.imshow(f"Detected Barcode {image_name}", image)
+    return image
 
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+capture = cv2.VideoCapture(0) # 0 is webcam
 
+while True:
+    isTrue, frame = capture.read()
 
-folderPath = 'Images'
+    if not isTrue:
+        print("Failed to capture frame")
+        break
 
-# List all files in the folder
-files = os.listdir(folderPath)
+    # Resize the frame if needed
+    # frame = rescale_frame(frame, scale=0.5)
 
-for file in files:
-    if file.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
+    frame = detect_barcodes(frame)  # Detect barcode in frame
 
-        image_path = os.path.join(folderPath, file)
+    # Display the frame
+    cv2.imshow("Barcode Detection", frame)
 
-        image = cv2.imread(image_path)
+    # Exit the loop if 'd' key is pressed
+    if cv2.waitKey(1) & 0xFF == ord('d'):
+        break
 
-        if image.shape[0] > 800 or image.shape[1] > 1500:
-            image = rescale_frame(image)
+# Release the capture object and close all windows
+capture.release()
+cv2.destroyAllWindows()
 
-        detect_barcodes(image)
