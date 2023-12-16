@@ -1,151 +1,13 @@
 import numpy as np
-import imutils
 import cv2
 import os
-
-def find_rectangles_within_contour(image, contour, showProcess=False):
-
-    original = image.copy()
-
-    min_x, min_y = float('inf'), float('inf')
-    max_x, max_y = 0, 0
-
-    # Loop through each point in the contour
-    for point in contour:
-        x, y = point[0]
-
-        # Update min and max values
-        min_x = min(min_x, x)
-        min_y = min(min_y, y)
-        max_x = max(max_x, x)
-        max_y = max(max_y, y)
-
-    mask = np.zeros(image.shape, dtype=np.uint8)
-    cv2.drawContours(mask, [contour], -1, (255, 255, 255), -1)
-
-    # cv2.imshow("Mask", mask)
-
-    masked_image = cv2.bitwise_and(image, mask)
-    # cv2.imshow("Masked Image", masked_image)
-    # cv2.rectangle(image, (min_x, min_y), (max_x, max_y), (0, 255, 0), 2)
-
-    masked_image = cv2.cvtColor(masked_image, cv2.COLOR_BGR2GRAY)
-    masked_image = cv2.GaussianBlur(masked_image, (5, 5), 0)
-    # masked_image = cv2.threshold(masked_image, 0, 255, cv2.THRESH_BINARY_INV)[1]
-    masked_image = cv2.Canny(masked_image, 50, 150, apertureSize=7)
-    # invert
-    # masked_image = cv2.bitwise_not(masked_image)
-
-    lines = cv2.HoughLinesP(image=masked_image,rho=1.5,theta=np.pi/180, threshold=100, lines=np.array([]), minLineLength=20,maxLineGap=80)
-
-    blank = np.zeros(image.shape, dtype=np.uint8)
-
-    copy = image.copy()
-
-    if lines is None or len(lines) < 10:
-        return False
-
-    print(len(lines))
-
-    # if lines is not None:
-    a = lines.shape[0]
-    for i in range(a):
-        # cv2.line(image, (lines[i][0][0], lines[i][0][1]), (lines[i][0][2], lines[i][0][3]), (0, 0, 255), 3, cv2.LINE_AA)
-        cv2.line(blank, (lines[i][0][0], lines[i][0][1]), (lines[i][0][2], lines[i][0][3]), (0, 0, 255), 3, cv2.LINE_AA)
-
-    if showProcess:
-        cv2.imshow("Masked Image", masked_image)
-        cv2.imshow("Image", image)
-        cv2.imshow("Lines", blank)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-    # mask lines with original
-    blank2 = cv2.cvtColor(blank, cv2.COLOR_BGR2GRAY)
-    blank2 = cv2.threshold(blank2, 0, 255, cv2.THRESH_BINARY_INV)[1]
-    blank2 = cv2.bitwise_not(blank2)
-
-    masked = cv2.bitwise_and(image, image, mask=blank2)
-    if showProcess:
-        cv2.imshow("Masked Image2", masked)
-
-    thresh = cv2.threshold(masked_image, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-    if showProcess:
-        cv2.imshow("Thresh", thresh)
-
-    thresh = cv2.erode(thresh, None, iterations=3)
-    thresh = cv2.dilate(thresh, None, iterations=2)
-    if showProcess:
-        cv2.imshow("Morphology", thresh)
-
-    x_min, x_max = -1, -1
-
-    done = False
-    for i in range(min_x, max_x):
-        if done:
-            break
-        for j in range(min_y, max_y):
-            b, g, r = blank[j, i]
-            if r == 255:
-            # if thresh[j,i] < 10:
-                x_min = i
-                cv2.circle(copy, (i, j), 5, (0, 0, 255), 3)
-                print ("X_MIN", x_min)
-                done = True
-                break
-
-    done = False
-
-    for i in range(max_x, min_x, -1):
-        if done:
-            break
-        for j in range(min_y, max_y):
-            # if thresh[j,i] < 10:
-            b, g, r = blank[j, i]
-            if r == 255:
-                x_max = i
-                cv2.circle(copy, (i, j), 5, (0,0,255), 3)
-                print("X_MAX", x_max)
-                done = True
-                break
-
-    if x_min == -1 or x_max == -1:
-        return
-
-    cv2.imshow("Max & min X Black Values", copy)
-    cv2.waitKey(0)
-
-    # contour[:, 0] = np.clip(contour[:, 0], x_min, x_max)
-    for point in contour:
-        x, y = point[0]
-
-        if x < x_min:
-            x = x_min
-
-        elif x > x_max:
-            x = x_max
-
-        point[0] = [x, y]
-
-    img = original.copy()
-
-    rect = cv2.minAreaRect(contour)
-    box = cv2.boxPoints(rect)
-    box = np.intp(box)
-    cv2.drawContours(img, [box], -1, (0, 255, 0), 3)
-
-    cv2.imshow("Final Image", img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-    # return contour
-
+import imutils
 
 def rescaleFrame(frame, scale=0.5):
     width = int(frame.shape[1] * scale)
     height = int(frame.shape[0] * scale)
     dimensions = (width, height)
     return cv2.resize(frame, dimensions, interpolation=cv2.INTER_AREA)
-
 
 def calculate_brightness(image):
     # Convert the image to grayscale
@@ -156,30 +18,154 @@ def calculate_brightness(image):
 
     return brightness
 
+def find_parallel(lines):
+    max_parallel_count = 0
+    best_line_index = -1
+    best_parallel_indices = []
 
-def detectBarcodeRegion(image, showProcess=False):
+    for i in range(len(lines)):
+        parallel_indices = []
+
+        for j in range(len(lines)):
+            if i == j:
+                continue
+
+            # Extract line coordinates
+            x1_i, y1_i, x2_i, y2_i = lines[i][0]
+            x1_j, y1_j, x2_j, y2_j = lines[j][0]
+
+            # Check if the lines are approximately parallel
+            delta_x_i = x2_i - x1_i
+            delta_y_i = y2_i - y1_i
+            delta_x_j = x2_j - x1_j
+            delta_y_j = y2_j - y1_j
+
+            # Avoid division by zero
+            if delta_x_i == 0 or delta_x_j == 0:
+                continue
+
+            slope_i = delta_y_i / delta_x_i
+            slope_j = delta_y_j / delta_x_j
+
+            if abs(slope_i - slope_j) < 0.05:
+                parallel_indices.append(j)
+
+        if len(parallel_indices) > max_parallel_count:
+            max_parallel_count = len(parallel_indices)
+            best_line_index = i
+            best_parallel_indices = parallel_indices
+
+    return best_line_index, best_parallel_indices
+
+def detectBarcodes2(image, contour):
+    showProcess = True
+
+    mask = np.zeros(image.shape, dtype=np.uint8)
+    cv2.drawContours(mask, [contour], -1, (255, 255, 255), -1)
+
+    masked_image = cv2.bitwise_and(image, mask)
+    cv2.imshow("Masked Image", masked_image)
+
+    gray = cv2.cvtColor(masked_image, cv2.COLOR_BGR2GRAY)
+
+    # blurred = cv2.medianBlur(gray, 7)
+    blurred = cv2.GaussianBlur(gray, (7, 7), 0)
+
+    edgeDetection = cv2.Canny(blurred, 50, 225, apertureSize=3)
+
+    if showProcess:
+        cv2.imshow("Edge", edgeDetection)
+        cv2.waitKey(0)
+
+    lines = cv2.HoughLinesP(edgeDetection, rho=1, theta=np.pi / 180, threshold=25, minLineLength=100, maxLineGap=10)
+
+    blank = np.zeros(image.shape, dtype=np.uint8)
+
+    if lines is None:
+        print("No lines")
+        return False
+
+    for i in range(len(lines)):
+        cv2.line(blank, (lines[i][0][0], lines[i][0][1]), (lines[i][0][2], lines[i][0][3]), (0, 0, 255), 3,
+                 cv2.LINE_AA)
+
+    if showProcess:
+        cv2.imshow("All Lines", blank)
+        cv2.waitKey(0)
+
+    if len(lines) < 10:
+        return contour
+
+    red_pixels_x = np.where(blank[:, :, 2] == 255)[1]
+
+    # Find the minimum and maximum x-coordinates
+    x_min = np.min(red_pixels_x)
+    x_max = np.max(red_pixels_x)
+
+    # Find the y-coordinates where red channel is 255
+    red_pixels_y = np.where(blank[:, :, 2] == 255)[0]
+
+    # Find the minimum and maximum y-coordinates
+    y_min = np.min(red_pixels_y)
+    y_max = np.max(red_pixels_y)
+
+    # Print the results
+    print("Min X:", x_min)
+    print("Max X:", x_max)
+    print("Min Y:", y_min)
+    print("Max Y:", y_max)
+
+    cnt = contour.copy()
+
+    for point in cnt:
+        x, y = point[0]
+
+        if x < x_min:
+            x = x_min
+        elif x > x_max:
+            x = x_max
+
+        if y < y_min:
+            y = y_min
+        elif y > y_max:
+            y = y_max
+
+        point[0] = [x, y]
+
+    # Draw the contour on the image
+    return cnt
+
+def detectBarcodes(image, showProcess=False):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     blurred = cv2.medianBlur(gray, 3)
 
-    # Perform edge detection, then perform dilation + erosion to
-    # close gaps in between object edges
-    edgeDetection = cv2.Canny(blurred, 50, 150,apertureSize = 3)
+    edgeDetection = cv2.Canny(blurred, 50, 225)
     edgeDetection = cv2.convertScaleAbs(edgeDetection)
+
+    if showProcess:
+        cv2.imshow("1 - Edge", edgeDetection)
 
     kernel = np.ones((7, 7), np.uint8)
 
     # Calculate the mean brightness of the image
     brightness = calculate_brightness(image)
-    if brightness > 150:  # Adjust thresholds for bright images
+
+    if brightness > 170:  # Adjust thresholds for bright images
         erode_dilate = edgeDetection
-        # erode_dilate = cv2.dilate(edgeDetection, kernel, iterations=1)
     else:
         erode_dilate = cv2.dilate(edgeDetection, kernel, iterations=1)
-        erode_dilate = cv2.erode(erode_dilate, kernel, iterations=2)
+        if showProcess:
+            cv2.imshow("2 - Dilate", erode_dilate)
+        erode_dilate = cv2.erode(erode_dilate, np.ones((11, 11), np.uint8), iterations=1)
+        if showProcess:
+            cv2.imshow("3 - Erode", erode_dilate)
 
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 7))
     closed = cv2.morphologyEx(erode_dilate, cv2.MORPH_CLOSE, kernel)
+
+    if showProcess:
+        cv2.imshow("4 - Closed", closed)
 
     cnts = cv2.findContours(
         closed.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -190,7 +176,18 @@ def detectBarcodeRegion(image, showProcess=False):
 
     for cnt in cnts:
         # Filter contours based on area
-        if cv2.contourArea(cnt) < (largestContourArea/2):
+        if cv2.contourArea(cnt) < (largestContourArea / 2):
+            continue
+
+        rect = cv2.minAreaRect(cnt)
+        box = cv2.boxPoints(rect)
+        box = np.intp(box)
+
+        cnt_original = box.copy()
+
+        cnt = detectBarcodes2(image, cnt)
+
+        if cnt is False:
             continue
 
         rect = cv2.minAreaRect(cnt)
@@ -198,26 +195,14 @@ def detectBarcodeRegion(image, showProcess=False):
         box = np.intp(box)
 
         # Draw a bounding box around each detected region
-        cv2.drawContours(image, [box], -1, (255, 0, 0), 3)
-        cv2.imshow("Detected Region", image)
-        # cv2.waitKey(0)
-        # cv2.destroyAllWindows()
-        original = image.copy()
+        cv2.drawContours(image, [box], -1, (0, 255, 0), 3)
+        cv2.drawContours(image, [cnt_original], -1, (255, 0, 0), 1)
 
-        find_rectangles_within_contour(original, cnt, True)
-        
+    image_name = os.path.basename(image_path)
+    cv2.imshow(f"Detected Barcode {image_name}", image)
 
-    if showProcess:
-        cv2.imshow("1- Blurred", blurred)
-        cv2.imshow("2- Canny", edgeDetection)
-        cv2.imshow("3- Erode and Dilate", erode_dilate)
-        cv2.imshow("4- Closed", closed)
-
-    # imageName = image_path.split(os.path.sep)[-1]
-    # cv2.imshow(imageName, image)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
 
 folderPath = 'Images'
 
@@ -236,4 +221,4 @@ for file in files:
         if image.shape[0] > 800 or image.shape[1] > 1500:
             image = rescaleFrame(image)
 
-        detectBarcodeRegion(image, True)
+        detectBarcodes(image, False)
